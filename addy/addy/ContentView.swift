@@ -17,16 +17,12 @@ struct ContentView: View {
                             ProgressView()
                         } else {
                             if vm.loggedIn,let user = vm.user, let web3rpc = Web3RPC(user: user) {
-                                UserDetailView(
-                                    web3RPC: web3rpc,
-                                    viewModel: vm
-                                )
+                                DashboardView(web3RPC: web3rpc, viewModel: vm)
                             } else {
                                 LoginView(vm: vm)
                             }
                         }
-                    }
-                    .navigationTitle(vm.navigationTitle)
+                    }                    
                     Spacer()
                 }
                 .onAppear {

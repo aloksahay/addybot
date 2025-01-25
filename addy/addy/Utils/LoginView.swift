@@ -59,7 +59,7 @@ struct LoginView: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .frame(height: 50)
-                            .background(Color.black.opacity(0.7))
+                            .background(Color.black.opacity(0.5))
                             .cornerRadius(8)
                     }
                 }

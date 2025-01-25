@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const { Octokit } = require('octokit');
 const OpenAI = require('openai');
+const { ethers } = require('ethers');
+const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
@@ -20,6 +22,13 @@ const openai = new OpenAI({
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Standard ERC721 ABI for balanceOf and tokenOfOwnerByIndex
+const ERC721_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
+  "function tokenURI(uint256 tokenId) view returns (string)"
+];
 
 // Basic health check endpoint
 app.get('/health', (req, res) => {
@@ -190,7 +199,7 @@ app.get('/github-commits', async (req, res) => {
 app.get('/recommend-session', async (req, res) => {
   try {
     // First get all tasks from Notion
-    const response = await fetch(`https://api.notion.com/v1/databases/${process.env.NOTION_DATABASE_ID}/query`, {
+    const notionResponse = await fetch(`https://api.notion.com/v1/databases/${process.env.NOTION_DATABASE_ID}/query`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.NOTION_KEY}`,
@@ -202,11 +211,11 @@ app.get('/recommend-session', async (req, res) => {
       })
     });
 
-    if (!response.ok) {
-      throw new Error(`Notion API responded with status: ${response.status}`);
+    if (!notionResponse.ok) {
+      throw new Error(`Notion API responded with status: ${notionResponse.status}`);
     }
 
-    const data = await response.json();
+    const data = await notionResponse.json();
     
     // Clean and transform the data
     const tasks = data.results.map(item => ({
@@ -218,7 +227,12 @@ app.get('/recommend-session', async (req, res) => {
       completion: item.properties.Completion.number || 0
     }));
 
-    // Get AI recommendation
+    // Calculate overall completion
+    const totalTasks = tasks.length;
+    const completionSum = tasks.reduce((sum, task) => sum + (task.completion || 0), 0);
+    const overallCompletion = totalTasks > 0 ? completionSum / totalTasks : 0;
+
+    // Get AI recommendations
     const completion = await openai.chat.completions.create({
       model: "gpt-4-turbo-preview",
       messages: [
@@ -226,30 +240,112 @@ app.get('/recommend-session', async (req, res) => {
           role: "system",
           content: `You are a productivity assistant that helps prioritize tasks and create focused work sessions. 
           Consider the following criteria:
-          1. Urgency: Tasks with approaching deadlines are higher priority. Tasks without deadlines are considered ongoing but lower priority.
-          2. Duration: Users work best in 30min-3hour sessions. Break longer tasks into smaller sessions.
-          3. Completion: Consider current completion percentage when suggesting next steps.
+          1. Urgency: 
+             - Tasks with immediate deadlines (within 7 days) are highest priority
+             - Tasks with deadlines within a month are medium priority
+             - Tasks without deadlines are considered ongoing but lower priority
+          2. Duration: 
+             - Users work best in 30min-3hour sessions
+             - Break longer tasks (>3 hours) into smaller sessions
+             - Consider current completion % when suggesting session length
+          3. Completion Status:
+             - Prioritize in-progress tasks that are close to completion
+             - For tasks with low completion %, suggest shorter initial sessions
           
-          Analyze the tasks and recommend ONE specific task to focus on next, with a concrete timeboxed session plan.`
+          Analyze the tasks and recommend the TOP 5 tasks to focus on, with concrete timeboxed session plans.
+          For tasks with deadlines, calculate and show the exact days remaining.`
         },
         {
           role: "user",
           content: `Here are my current tasks: ${JSON.stringify(tasks, null, 2)}. 
-          What should I work on next and for how long? Please format the response as JSON with fields:
-          - taskName: the recommended task
-          - sessionDuration: recommended minutes for this session
-          - reason: brief explanation of why this task was chosen
-          - targetCompletion: what completion percentage to aim for in this session`
+          What are the top 5 tasks I should work on and in what order? Please format the response as JSON with fields:
+          - recommendations: array of 5 objects containing:
+            - taskName: the recommended task
+            - sessionDuration: recommended minutes for this session
+            - priority: number from 1-5 (1 being highest priority)
+            - reason: brief explanation of why this task was chosen
+            - currentCompletion: current completion percentage of this task
+            - targetCompletion: what completion percentage to aim for in this session
+            - deadline: the task's deadline date (if any)
+            - timeRemaining: days remaining until deadline (e.g., "4 days remaining", "Due today", or "No deadline")`
         }
       ],
       response_format: { type: "json_object" }
     });
 
-    const recommendation = JSON.parse(completion.choices[0].message.content);
-    res.json(recommendation);
+    const recommendations = JSON.parse(completion.choices[0].message.content);
+    
+    // Add overall completion stats to the response
+    const finalResponse = {
+      overallProgress: {
+        completion: overallCompletion,
+        totalTasks,
+        completedTasks: tasks.filter(task => task.completion === 1).length,
+        inProgressTasks: tasks.filter(task => task.completion > 0 && task.completion < 1).length,
+        notStartedTasks: tasks.filter(task => task.completion === 0).length,
+        tasksWithDeadlines: tasks.filter(task => task.deadline !== null).length
+      },
+      ...recommendations
+    };
+
+    res.json(finalResponse);
 
   } catch (error) {
-    console.error('Error getting task recommendation:', error);
+    console.error('Error getting task recommendations:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// NFT holdings endpoint
+app.get('/nft-holdings', async (req, res) => {
+  try {
+    const { walletAddress } = req.query;
+    const contractAddress = '0x6847f4ef767fc976f9158a1d0de7cb60e1af4ebf';
+    
+    if (!walletAddress) {
+      throw new Error('Wallet address is required');
+    }
+
+    // Connect to Mantle Sepolia
+    const provider = new ethers.JsonRpcProvider('https://rpc.sepolia.mantle.xyz');
+    const nftContract = new ethers.Contract(contractAddress, ERC721_ABI, provider);
+
+    // Get number of NFTs owned by the wallet
+    const balance = await nftContract.balanceOf(walletAddress);
+    
+    // Get all token IDs owned by the wallet and their metadata
+    const tokens = [];
+    for (let i = 0; i < Number(balance); i++) {
+      const tokenId = await nftContract.tokenOfOwnerByIndex(walletAddress, i);
+      const tokenURI = await nftContract.tokenURI(tokenId);
+      
+      // Fetch metadata from IPFS or HTTP
+      let metadata = null;
+      try {
+        const ipfsUrl = tokenURI.replace('ipfs://', 'https://ipfs.io/ipfs/');
+        const metadataResponse = await axios.get(ipfsUrl);
+        metadata = metadataResponse.data;
+      } catch (metadataError) {
+        console.error(`Error fetching metadata for token ${tokenId}:`, metadataError);
+      }
+
+      tokens.push({
+        tokenId: tokenId.toString(),
+        tokenURI,
+        metadata
+      });
+    }
+
+    res.json({
+      walletAddress,
+      contractAddress,
+      balance: balance.toString(),
+      tokens,
+      explorerUrl: `https://sepolia.mantlescan.xyz/address/${contractAddress}`
+    });
+
+  } catch (error) {
+    console.error('Error fetching NFT holdings:', error);
     res.status(500).json({ error: error.message });
   }
 });
