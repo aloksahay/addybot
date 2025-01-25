@@ -39,7 +39,7 @@ class ViewModel: ObservableObject {
                 loggedIn = true
             }
             isLoading = false
-            navigationTitle = loggedIn ? "UserInfo" : "SignIn"
+            navigationTitle = loggedIn ? "User Info" : ""
         })
     }
     
