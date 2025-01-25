@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { Octokit } = require('octokit');
+const OpenAI = require('openai');
 require('dotenv').config();
 
 const app = express();
@@ -9,6 +10,11 @@ const port = process.env.PORT || 3000;
 // Initialize Octokit
 const octokit = new Octokit({
   auth: process.env.GITHUB_TOKEN
+});
+
+// Initialize OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
 });
 
 // Middleware
@@ -176,6 +182,74 @@ app.get('/github-commits', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching from GitHub:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Productivity assistant endpoint
+app.get('/recommend-session', async (req, res) => {
+  try {
+    // First get all tasks from Notion
+    const response = await fetch(`https://api.notion.com/v1/databases/${process.env.NOTION_DATABASE_ID}/query`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.NOTION_KEY}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        page_size: 100
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Notion API responded with status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // Clean and transform the data
+    const tasks = data.results.map(item => ({
+      task: item.properties.Task.title[0]?.plain_text || '',
+      status: item.properties.Status.status?.name || '',
+      deadline: item.properties.Deadline.date?.start || null,
+      hoursEstimate: item.properties['Hours estimate'].number || 0,
+      category: item.properties.Category.select?.name || '',
+      completion: item.properties.Completion.number || 0
+    }));
+
+    // Get AI recommendation
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-turbo-preview",
+      messages: [
+        {
+          role: "system",
+          content: `You are a productivity assistant that helps prioritize tasks and create focused work sessions. 
+          Consider the following criteria:
+          1. Urgency: Tasks with approaching deadlines are higher priority. Tasks without deadlines are considered ongoing but lower priority.
+          2. Duration: Users work best in 30min-3hour sessions. Break longer tasks into smaller sessions.
+          3. Completion: Consider current completion percentage when suggesting next steps.
+          
+          Analyze the tasks and recommend ONE specific task to focus on next, with a concrete timeboxed session plan.`
+        },
+        {
+          role: "user",
+          content: `Here are my current tasks: ${JSON.stringify(tasks, null, 2)}. 
+          What should I work on next and for how long? Please format the response as JSON with fields:
+          - taskName: the recommended task
+          - sessionDuration: recommended minutes for this session
+          - reason: brief explanation of why this task was chosen
+          - targetCompletion: what completion percentage to aim for in this session`
+        }
+      ],
+      response_format: { type: "json_object" }
+    });
+
+    const recommendation = JSON.parse(completion.choices[0].message.content);
+    res.json(recommendation);
+
+  } catch (error) {
+    console.error('Error getting task recommendation:', error);
     res.status(500).json({ error: error.message });
   }
 });
