@@ -28,10 +28,6 @@ struct UserDetailView: View {
                     }
                 }
 
-                // Log private key and user address
-                print("Private Key: \(user.privKey ?? "")")
-                print("User Address: \(web3RPC.publicAddress)")
-
                 Section(header: Text("Blockchain Calls")) {
                     Button {
                         web3RPC.getBalance()
