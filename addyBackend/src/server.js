@@ -1,9 +1,15 @@
 const express = require('express');
 const cors = require('cors');
+const { Octokit } = require('octokit');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Initialize Octokit
+const octokit = new Octokit({
+  auth: process.env.GITHUB_TOKEN
+});
 
 // Middleware
 app.use(cors());
@@ -47,6 +53,109 @@ app.get('/notion-data', async (req, res) => {
     res.json(cleanedData);
   } catch (error) {
     console.error('Error fetching from Notion:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GitHub latest commit endpoint
+app.get('/github-latest', async (req, res) => {
+  try {
+    // Get latest commits directly from the repo
+    const { data: repos } = await octokit.request('GET /users/{username}/repos', {
+      username: process.env.GITHUB_USERNAME,
+      sort: 'pushed',
+      direction: 'desc',
+      per_page: 1
+    });
+
+    if (!repos.length) {
+      throw new Error('No repositories found');
+    }
+
+    const repo = repos[0];
+    const { data: commits } = await octokit.request('GET /repos/{owner}/{repo}/commits', {
+      owner: repo.owner.login,
+      repo: repo.name,
+      per_page: 1
+    });
+
+    if (!commits.length) {
+      throw new Error('No commits found in repository');
+    }
+
+    // Get detailed commit info with stats
+    const { data: detailedCommit } = await octokit.request('GET /repos/{owner}/{repo}/commits/{commit_sha}', {
+      owner: repo.owner.login,
+      repo: repo.name,
+      commit_sha: commits[0].sha
+    });
+
+    const commitInfo = {
+      repo: `${repo.owner.login}/${repo.name}`,
+      message: detailedCommit.commit.message,
+      date: detailedCommit.commit.committer.date,
+      stats: {
+        additions: detailedCommit.stats.additions,
+        deletions: detailedCommit.stats.deletions,
+        total: detailedCommit.stats.total
+      },
+      url: detailedCommit.html_url,
+      author: detailedCommit.commit.author.name
+    };
+
+    res.json(commitInfo);
+  } catch (error) {
+    console.error('Error fetching from GitHub:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GitHub recent commits endpoint
+app.get('/github-commits', async (req, res) => {
+  try {
+    // Get most recently pushed repo
+    const { data: repos } = await octokit.request('GET /users/{username}/repos', {
+      username: process.env.GITHUB_USERNAME,
+      sort: 'pushed',
+      direction: 'desc',
+      per_page: 1
+    });
+
+    if (!repos.length) {
+      throw new Error('No repositories found');
+    }
+
+    const repo = repos[0];
+    
+    // Get latest commit from this repo
+    const { data: commits } = await octokit.request('GET /repos/{owner}/{repo}/commits', {
+      owner: repo.owner.login,
+      repo: repo.name,
+      per_page: 1
+    });
+
+    if (!commits.length) {
+      throw new Error('No commits found in repository');
+    }
+
+    // Get detailed commit info
+    const { data: detailedCommit } = await octokit.request('GET /repos/{owner}/{repo}/commits/{commit_sha}', {
+      owner: repo.owner.login,
+      repo: repo.name,
+      commit_sha: commits[0].sha
+    });
+
+    // Return only the latest commit with minimal info
+    res.json({
+      repo: `${repo.owner.login}/${repo.name}`,
+      message: detailedCommit.commit.message,
+      stats: {
+        additions: detailedCommit.stats.additions,
+        deletions: detailedCommit.stats.deletions
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching from GitHub:', error);
     res.status(500).json({ error: error.message });
   }
 });
