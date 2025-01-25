@@ -4,6 +4,7 @@ const { Octokit } = require('octokit');
 const OpenAI = require('openai');
 const { ethers } = require('ethers');
 const axios = require('axios');
+const NodeCache = require('node-cache');
 require('dotenv').config();
 
 const app = express();
@@ -18,6 +19,9 @@ const octokit = new Octokit({
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
+
+// Initialize cache with 5 minute TTL
+const cache = new NodeCache({ stdTTL: 300 });
 
 // Middleware
 app.use(cors());
@@ -198,6 +202,12 @@ app.get('/github-commits', async (req, res) => {
 // Productivity assistant endpoint
 app.get('/recommend-session', async (req, res) => {
   try {
+    // Check cache first
+    const cachedResponse = cache.get('recommendations');
+    if (cachedResponse) {
+      return res.json(cachedResponse);
+    }
+
     // First get all tasks from Notion
     const notionResponse = await fetch(`https://api.notion.com/v1/databases/${process.env.NOTION_DATABASE_ID}/query`, {
       method: 'POST',
@@ -232,50 +242,35 @@ app.get('/recommend-session', async (req, res) => {
     const completionSum = tasks.reduce((sum, task) => sum + (task.completion || 0), 0);
     const overallCompletion = totalTasks > 0 ? completionSum / totalTasks : 0;
 
-    // Get AI recommendations
+    // Get AI recommendations with simplified prompt
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt-3.5-turbo-1106",
       messages: [
         {
           role: "system",
-          content: `You are a productivity assistant that helps prioritize tasks and create focused work sessions. 
-          Consider the following criteria:
-          1. Urgency: 
-             - Tasks with immediate deadlines (within 7 days) are highest priority
-             - Tasks with deadlines within a month are medium priority
-             - Tasks without deadlines are considered ongoing but lower priority
-          2. Duration: 
-             - Users work best in 30min-3hour sessions
-             - Break longer tasks (>3 hours) into smaller sessions
-             - Consider current completion % when suggesting session length
-          3. Completion Status:
-             - Prioritize in-progress tasks that are close to completion
-             - For tasks with low completion %, suggest shorter initial sessions
-          
-          Analyze the tasks and recommend the TOP 5 tasks to focus on, with concrete timeboxed session plans.
-          For tasks with deadlines, calculate and show the exact days remaining.`
+          content: `Prioritize tasks based on deadlines (7 days=high, 30 days=medium), completion status, and work sessions between 30 and 180 minutes. Session duration and priority must be integers.`
         },
         {
           role: "user",
-          content: `Here are my current tasks: ${JSON.stringify(tasks, null, 2)}. 
-          What are the top 5 tasks I should work on and in what order? Please format the response as JSON with fields:
-          - recommendations: array of 5 objects containing:
-            - taskName: the recommended task
-            - sessionDuration: recommended minutes for this session
-            - priority: number from 1-5 (1 being highest priority)
-            - reason: brief explanation of why this task was chosen
-            - currentCompletion: current completion percentage of this task
-            - targetCompletion: what completion percentage to aim for in this session
-            - deadline: the task's deadline date (if any)
-            - timeRemaining: days remaining until deadline (e.g., "4 days remaining", "Due today", or "No deadline")`
+          content: `Tasks: ${JSON.stringify(tasks)}. Return top 5 priority tasks as JSON with fields: recommendations (array with taskName, sessionDuration (integer minutes), priority (integer 1-5), reason, currentCompletion (decimal), targetCompletion (decimal), deadline)`
         }
       ],
-      response_format: { type: "json_object" }
+      response_format: { type: "json_object" },
+      temperature: 0.3
     });
 
     const recommendations = JSON.parse(completion.choices[0].message.content);
     
-    // Add overall completion stats to the response
+    // Validate and fix session durations and priorities
+    if (recommendations.recommendations) {
+      recommendations.recommendations = recommendations.recommendations.map(rec => ({
+        ...rec,
+        sessionDuration: Math.round(Number(rec.sessionDuration)),  // Ensure integer
+        priority: Math.round(Number(rec.priority))  // Ensure integer
+      }));
+    }
+
+    // Create final response
     const finalResponse = {
       overallProgress: {
         completion: overallCompletion,
@@ -287,6 +282,9 @@ app.get('/recommend-session', async (req, res) => {
       },
       ...recommendations
     };
+
+    // Cache the response
+    cache.set('recommendations', finalResponse);
 
     res.json(finalResponse);
 
