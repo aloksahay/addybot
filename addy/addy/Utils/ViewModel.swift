@@ -9,12 +9,10 @@ class ViewModel: ObservableObject {
     @Published var user: Web3AuthState?
     @Published var isLoading = false
     @Published var navigationTitle: String = ""
-    // IMP START - Get your Web3Auth Client ID from Dashboard
+
     private var clientId = environment.web3AuthClientId
-    // IMP END - Get your Web3Auth Client ID from Dashboard
-    // IMP START - Whitelist bundle ID
     private var network: Network = .sapphire_devnet
-    // IMP END - Whitelist bundle ID
+
     func setup() async {
         guard web3Auth == nil else { return }
         await MainActor.run(body: {
