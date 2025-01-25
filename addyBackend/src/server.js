@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { Octokit } = require('octokit');
 const OpenAI = require('openai');
+const { ethers } = require('ethers');
 require('dotenv').config();
 
 const app = express();
@@ -20,6 +21,13 @@ const openai = new OpenAI({
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Standard ERC721 ABI for balanceOf and tokenOfOwnerByIndex
+const ERC721_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
+  "function tokenURI(uint256 tokenId) view returns (string)"
+];
 
 // Basic health check endpoint
 app.get('/health', (req, res) => {
@@ -250,6 +258,48 @@ app.get('/recommend-session', async (req, res) => {
 
   } catch (error) {
     console.error('Error getting task recommendation:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// NFT holdings endpoint
+app.get('/nft-holdings', async (req, res) => {
+  try {
+    const { walletAddress } = req.query;
+    const contractAddress = '0x6847f4ef767fc976f9158a1d0de7cb60e1af4ebf'; // Your NFT contract
+    
+    if (!walletAddress) {
+      throw new Error('Wallet address is required');
+    }
+
+    // Connect to Mantle Sepolia
+    const provider = new ethers.JsonRpcProvider('https://rpc.sepolia.mantle.xyz');
+    const nftContract = new ethers.Contract(contractAddress, ERC721_ABI, provider);
+
+    // Get number of NFTs owned by the wallet
+    const balance = await nftContract.balanceOf(walletAddress);
+    
+    // Get all token IDs owned by the wallet
+    const tokenIds = [];
+    for (let i = 0; i < Number(balance); i++) {
+      const tokenId = await nftContract.tokenOfOwnerByIndex(walletAddress, i);
+      const tokenURI = await nftContract.tokenURI(tokenId);
+      tokenIds.push({
+        tokenId: tokenId.toString(),
+        tokenURI
+      });
+    }
+
+    res.json({
+      walletAddress,
+      contractAddress,
+      balance: balance.toString(),
+      tokens: tokenIds,
+      explorerUrl: `https://sepolia.mantlescan.xyz/address/${contractAddress}`
+    });
+
+  } catch (error) {
+    console.error('Error fetching NFT holdings:', error);
     res.status(500).json({ error: error.message });
   }
 });

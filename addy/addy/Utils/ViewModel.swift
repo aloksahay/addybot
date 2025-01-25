@@ -90,4 +90,19 @@ class ViewModel: ObservableObject {
             }
         }
     }
+    
+    func mintNFT(web3RPC: Web3RPC, contractAddress: String) async throws {        
+        let contractABI = environment.contractABI
+        
+        do {
+            let result = try await web3RPC.mintNFT(
+                contractAddress: contractAddress,
+                abi: contractABI
+            )
+            print("NFT minted successfully! Transaction hash: \(result)")
+        } catch {
+            print("Error minting NFT: \(error)")
+            throw error
+        }
+    }
 }

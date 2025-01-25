@@ -86,6 +86,30 @@ struct LoginView: View {
             )
             .padding(.horizontal, 20)
 
+            Button(
+                action: {
+                    if vm.loggedIn {
+                        // Navigate to NFTMintView
+                        let web3RPC = Web3RPC() // Initialize with proper parameters
+                        let mintView = NFTMintView(vm: vm, web3RPC: web3RPC)
+                        // Handle navigation based on your app's navigation setup
+                    } else {
+                        // Show login required message
+                        // You may want to add an alert state for this
+                    }
+                },
+                label: {
+                    Text("Mint NFT")
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.purple)
+                        .cornerRadius(8)
+                }
+            )
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+
             Spacer()
         }
         .background(Color.white.edgesIgnoringSafeArea(.all))
