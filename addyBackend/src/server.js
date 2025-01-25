@@ -47,7 +47,8 @@ app.get('/notion-data', async (req, res) => {
       status: item.properties.Status.status?.name || '',
       deadline: item.properties.Deadline.date?.start || null,
       hoursEstimate: item.properties['Hours estimate'].number || 0,
-      category: item.properties.Category.select?.name || ''
+      category: item.properties.Category.select?.name || '',
+      completion: item.properties.Completion.number || 0
     }));
 
     res.json(cleanedData);
