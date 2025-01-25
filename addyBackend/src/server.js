@@ -127,28 +127,47 @@ app.get('/github-commits', async (req, res) => {
 
     const repo = repos[0];
     
-    // Get latest commit from this repo
-    const { data: commits } = await octokit.request('GET /repos/{owner}/{repo}/commits', {
+    // Get all branches
+    const { data: branches } = await octokit.request('GET /repos/{owner}/{repo}/branches', {
       owner: repo.owner.login,
-      repo: repo.name,
-      per_page: 1
+      repo: repo.name
     });
 
-    if (!commits.length) {
-      throw new Error('No commits found in repository');
-    }
+    // Get latest commit from each branch
+    const branchCommits = await Promise.all(
+      branches.map(async (branch) => {
+        const { data: commits } = await octokit.request('GET /repos/{owner}/{repo}/commits', {
+          owner: repo.owner.login,
+          repo: repo.name,
+          sha: branch.name,
+          per_page: 1
+        });
+        return {
+          branch: branch.name,
+          commit: commits[0]
+        };
+      })
+    );
+
+    // Find the most recent commit
+    const latestCommit = branchCommits.reduce((latest, current) => {
+      const currentDate = new Date(current.commit.commit.committer.date);
+      const latestDate = new Date(latest.commit.commit.committer.date);
+      return currentDate > latestDate ? current : latest;
+    });
 
     // Get detailed commit info
     const { data: detailedCommit } = await octokit.request('GET /repos/{owner}/{repo}/commits/{commit_sha}', {
       owner: repo.owner.login,
       repo: repo.name,
-      commit_sha: commits[0].sha
+      commit_sha: latestCommit.commit.sha
     });
 
     // Return only the latest commit with minimal info
     res.json({
       repo: `${repo.owner.login}/${repo.name}`,
       message: detailedCommit.commit.message,
+      branch: latestCommit.branch,
       stats: {
         additions: detailedCommit.stats.additions,
         deletions: detailedCommit.stats.deletions
