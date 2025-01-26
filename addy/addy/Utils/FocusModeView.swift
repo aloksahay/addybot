@@ -85,6 +85,7 @@ public struct FocusModeView: View {
         self.selectedImageIndex = selectedImageIndex
         _timeRemaining = State(initialValue: sessionDuration * 60) // Convert minutes to seconds
     }
+
     
     private var progress: Double {
         let totalSeconds = Double(sessionDuration * 60)

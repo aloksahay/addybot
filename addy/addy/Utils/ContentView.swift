@@ -22,7 +22,7 @@ struct ContentView: View {
                                 LoginView(vm: vm)
                             }
                         }
-                    }                    
+                    }
                     Spacer()
                 }
                 .onAppear {
@@ -30,11 +30,5 @@ struct ContentView: View {
                         await vm.setup()
                     }
                 }
-    }
-}
-
-struct ContentView_Previews: PreviewProvider {
-    static var previews: some View {
-        ContentView(vm: ViewModel())
     }
 }

@@ -1,5 +1,60 @@
 import SwiftUI
 
+private struct PurchaseOverlay: View {
+    let onBuy: () -> Void
+    let onCancel: () -> Void
+    @State private var isLoading = false
+    
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.7)
+                .edgesIgnoringSafeArea(.all)
+            
+            VStack(spacing: 20) {
+                Text("Purchase Mood Room")
+                    .font(.system(size: 18))
+                    .foregroundColor(.white)
+                
+                Text("1 MNT")
+                    .font(.system(size: 48, weight: .bold))
+                    .foregroundColor(.white)
+                
+                if isLoading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(1.5)
+                } else {
+                    VStack(spacing: 12) {
+                        Button(action: {
+                            isLoading = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                                isLoading = false
+                                onBuy()
+                            }
+                        }) {
+                            Text("Buy for 1 MNT")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(.black)
+                                .frame(width: 200, height: 50)
+                                .background(Color.white)
+                                .cornerRadius(12)
+                        }
+                        
+                        Button(action: onCancel) {
+                            Text("Cancel")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(.white)
+                                .frame(width: 200, height: 50)
+                                .background(Color.red.opacity(0.5))
+                                .cornerRadius(12)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 public struct DashboardView: View {
     @StateObject var web3RPC: Web3RPC
     @StateObject var viewModel: ViewModel
@@ -8,14 +63,17 @@ public struct DashboardView: View {
     @State private var recommendations: [TaskRecommendation] = []
     @State private var selectedTaskDuration: Int?
     @State private var showFocusMode = false
+    @State private var showPurchaseOverlay = false
+    @State private var selectedImageForPurchase: Int?
+    @State private var purchasedImages: Set<Int> = [1] // Image 1 is free by default
+    @State private var balanceTimer: Timer?
+    @State private var showLogoutAlert = false
     
     public init(web3RPC: Web3RPC, viewModel: ViewModel) {
         _web3RPC = StateObject(wrappedValue: web3RPC)
         _viewModel = StateObject(wrappedValue: viewModel)
     }
-    
-    // Add this property to store time remaining for each task
-    private var timeRemaining: [String] = ["2D 3H", "1D 5H", "12H", "3D 2H", "1D 8H"]
+            
     
     private var userInitial: String {
         guard let email = viewModel.user?.userInfo?.email,
@@ -51,7 +109,7 @@ public struct DashboardView: View {
                     
                     Spacer()
                     
-                    // Profile and Balance
+                    // Profile and Balance with Logout
                     VStack(alignment: .trailing, spacing: 8) {
                         ZStack {
                             Circle()
@@ -63,16 +121,20 @@ public struct DashboardView: View {
                         }
                         
                         if web3RPC.balance >= 0 {
-                            Text("\(String(format: "%.1f", web3RPC.balance)) MNT")
-                                .foregroundColor(.white)
-                                .font(.system(size: 16, weight: .semibold))
+                            Button(action: {
+                                showLogoutAlert = true
+                            }) {
+                                Text("\(String(format: "%.1f", web3RPC.balance)) MNT")
+                                    .foregroundColor(.white)
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
                         }
                     }
                 }
                 .padding(.horizontal)
                 .padding(.top, 20)
                 
-                // Main Images with Lock Icons
+                // Updated TabView with purchase/owned indicators
                 TabView(selection: $currentPage) {
                     ForEach(1...4, id: \.self) { index in
                         ZStack(alignment: .bottomTrailing) {
@@ -82,11 +144,23 @@ public struct DashboardView: View {
                                 .frame(width: UIScreen.main.bounds.width - 40, height: 300)
                                 .cornerRadius(20)
                             
-                            if index > 1 {
-                                VStack(spacing: 4) {
-                                    Button(action: {
-                                        // Purchase action
-                                    }) {
+                            if purchasedImages.contains(index) {
+                                // Owned image indicator
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.green.opacity(0.6))
+                                        .frame(width: 40, height: 40)
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.white)
+                                }
+                                .padding(12)
+                            } else {
+                                // Purchase button
+                                Button(action: {
+                                    selectedImageForPurchase = index
+                                    showPurchaseOverlay = true
+                                }) {
+                                    VStack(spacing: 4) {
                                         ZStack {
                                             Circle()
                                                 .stroke(Color.yellow, lineWidth: 2)
@@ -95,10 +169,10 @@ public struct DashboardView: View {
                                             Image(systemName: "cart.fill")
                                                 .foregroundColor(.white)
                                         }
+                                        Text("1 MNT")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(.white)
                                     }
-                                    Text("1 MNT")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.white)
                                 }
                                 .padding(12)
                             }
@@ -168,6 +242,23 @@ public struct DashboardView: View {
                 .padding(.horizontal)
                 .padding(.bottom, 30)
             }
+            
+            // Updated Purchase Overlay
+            if showPurchaseOverlay {
+                PurchaseOverlay(
+                    onBuy: {
+                        if let imageIndex = selectedImageForPurchase {
+                            purchasedImages.insert(imageIndex)
+                            web3RPC.getBalance()
+                        }
+                        showPurchaseOverlay = false
+                    },
+                    onCancel: {
+                        showPurchaseOverlay = false
+                    }
+                )
+                .transition(.opacity)
+            }
         }
         .fullScreenCover(isPresented: $showHistory) {
             HistoryView(isPresented: $showHistory)
@@ -179,9 +270,29 @@ public struct DashboardView: View {
                 selectedImageIndex: currentPage
             )
         }
+        .alert(isPresented: $showLogoutAlert) {
+            Alert(
+                title: Text("Logout"),
+                message: Text("Are you sure you want to logout?"),
+                primaryButton: .destructive(Text("Logout")) {
+                    Task {
+                        do {
+                            try await viewModel.logout()
+                        } catch {
+                            print("Logout failed: \(error)")
+                        }
+                    }
+                },
+                secondaryButton: .cancel()
+            )
+        }
         .onAppear {
             web3RPC.getBalance()
             fetchRecommendations()
+            startBalancePolling()
+        }
+        .onDisappear {
+            balanceTimer?.invalidate()
         }
     }
     
@@ -228,5 +339,14 @@ public struct DashboardView: View {
                 print("❌ Decoding error: \(error)")
             }
         }.resume()
+    }
+    
+    private func startBalancePolling() {
+        // Initial fetch already done in onAppear
+        
+        // Set up polling every 10 seconds
+        balanceTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
+            web3RPC.getBalance()
+        }
     }
 }
