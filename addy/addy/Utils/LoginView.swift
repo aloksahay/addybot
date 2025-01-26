@@ -6,96 +6,92 @@ import web3
 struct LoginView: View {
     @StateObject var vm: ViewModel
     @State private var emailInput: String = ""
-
+    
     var body: some View {
-        VStack {
-            Spacer()
+        // Main container
+        ZStack {
+            // Background layer
+            Image("splash")
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(minWidth: 0, maxWidth: .infinity)
+                .edgesIgnoringSafeArea(.all)
             
-            Text("Web3Auth iOS QuickStart")
-                                .font(.title) // Adjust the font size as needed
-                                .fontWeight(.bold)
-                                .padding(.bottom, 20)
-
-            TextField("Enter your email", text: $emailInput)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .keyboardType(.emailAddress)
-                .padding()
-                .padding(.horizontal, 10)
-
-            Button(
-                action: {
-                    vm.loginEmailPasswordless(provider: .EMAIL_PASSWORDLESS, email: emailInput)
-                },
-                label: {
-                    Text("Sign In with Email Passwordless")
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(8)
+            // Content layer
+            VStack {
+                Spacer() // Push content to bottom
+                
+                // Login form container
+                VStack(spacing: 20) {
+                    // Title and description
+                    VStack(spacing: 12) {
+                        Text("Addy for your ADD")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.white)
+                        
+                        Rectangle()
+                            .frame(height: 1)
+                            .foregroundColor(.white.opacity(0.3))
+                            .padding(.horizontal, 40)
+                        
+                        Text("Let Addy manage your tasks for you and block out the distractions to help you achieve your daily goals.")
+                            .font(.system(size: 16))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 20)
+                    }
+                    .padding(.bottom, 30)
+                    
+                    // Email field
+                    TextField("Enter your email", text: $emailInput)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress)
+                        .frame(height: 50)
+                    
+                    // Login button
+                    Button(action: {
+                        vm.loginEmailPasswordless(provider: .EMAIL_PASSWORDLESS, email: emailInput)
+                    }) {
+                        Text("Login")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .background(Color.black.opacity(0.5))
+                            .cornerRadius(8)
+                    }
                 }
-            )
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-
-            HStack {
-                Rectangle()
-                    .fill(Color.gray)
-                    .frame(height: 1)
-
-                Text("or")
-                    .foregroundColor(.gray)
-                    .padding(.horizontal, 10)
-
-                Rectangle()
-                    .fill(Color.gray)
-                    .frame(height: 1)
+                .padding(.horizontal, 32)
+                .padding(.bottom, 50)
             }
-            .padding(.horizontal, 20)
-
-            Button(
-                action: {
-                    vm.login(provider: .GOOGLE)
-                },
-                label: {
-                    Text("Sign In with Google")
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.red) // Change color as needed
-                        .cornerRadius(8)
-                }
-            )
-            .padding(.horizontal, 20)
-            .padding(.bottom, 10)
-
-            Button(
-                action: {
-                    vm.login(provider: .APPLE)
-                },
-                label: {
-                    Text("Sign In with Apple")
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.black) // Change color as needed
-                        .cornerRadius(8)
-                }
-            )
-            .padding(.horizontal, 20)
-
-            Spacer()
+            
+            // Loading overlay
+            if vm.isLoading {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    .scaleEffect(1.5)
+            }
         }
-        .background(Color.white.edgesIgnoringSafeArea(.all))
     }
 }
 
 
 struct LoginView_Previews: PreviewProvider {
     static var previews: some View {
-        LoginView(vm: ViewModel())
+        let mockViewModel = ViewModel()
+        
+        // Initialize preview environment
+        return Group {
+            LoginView(vm: mockViewModel)
+                .onAppear {
+                    Task {
+                        await mockViewModel.setup()
+                    }
+                }
+                .previewDisplayName("Login Screen")
+        }
     }
 }
 

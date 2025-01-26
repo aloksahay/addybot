@@ -3,23 +3,24 @@ import Foundation
 import Web3Auth
 // IMP END - Quick Start
 
-class ViewModel: ObservableObject {
-    var web3Auth: Web3Auth?
-    @Published var loggedIn: Bool = false
-    @Published var user: Web3AuthState?
-    @Published var isLoading = false
-    @Published var navigationTitle: String = ""
+public class ViewModel: ObservableObject {
+    public var web3Auth: Web3Auth?
+    @Published public var loggedIn: Bool = false
+    @Published public var user: Web3AuthState?
+    @Published public var isLoading = false
     // IMP START - Get your Web3Auth Client ID from Dashboard
     private var clientId = environment.web3AuthClientId
     // IMP END - Get your Web3Auth Client ID from Dashboard
     // IMP START - Whitelist bundle ID
     private var network: Network = .sapphire_devnet
     // IMP END - Whitelist bundle ID
-    func setup() async {
+    
+    public init() {}
+    
+    public func setup() async {
         guard web3Auth == nil else { return }
         await MainActor.run(body: {
-            isLoading = true
-            navigationTitle = "Loading"
+            isLoading = true            
         })
         
         // IMP START - Initialize Web3Auth
@@ -38,12 +39,11 @@ class ViewModel: ObservableObject {
                 user = web3Auth?.state
                 loggedIn = true
             }
-            isLoading = false
-            navigationTitle = loggedIn ? "UserInfo" : "SignIn"
+            isLoading = false            
         })
     }
     
-    func login(provider: Web3AuthProvider) {
+    public func login(provider: Web3AuthProvider) {
         Task {
             do {
                 // IMP START - Login
@@ -62,7 +62,7 @@ class ViewModel: ObservableObject {
         }
     }
     
-    func logout() throws {
+    public func logout() throws {
         Task {
             // IMP START - Logout
             try await web3Auth?.logout()
@@ -73,7 +73,7 @@ class ViewModel: ObservableObject {
         }
     }
     
-    func loginEmailPasswordless(provider: Web3AuthProvider, email: String) {
+    public func loginEmailPasswordless(provider: Web3AuthProvider, email: String) {
         Task {
             do {
                 // IMP START - Login
@@ -82,7 +82,6 @@ class ViewModel: ObservableObject {
                 await MainActor.run(body: {
                     user = result
                     loggedIn = true
-                    navigationTitle = "UserInfo"
                 })
                 
             } catch {

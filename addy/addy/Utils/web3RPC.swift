@@ -1,4 +1,3 @@
-
 import BigInt
 import Combine
 import Foundation
@@ -6,7 +5,7 @@ import web3
 import Web3Auth
 import SwiftUI
 
-class Web3RPC : ObservableObject {
+public class Web3RPC: ObservableObject {
     var user: Web3AuthState
     private var client: EthereumClientProtocol
     public var address: EthereumAddress
@@ -15,10 +14,10 @@ class Web3RPC : ObservableObject {
     private var chainID = 5003
     private var RPC_URL = "https://rpc.sepolia.mantle.xyz"
     
-    @Published var balance: Double = 0
-    @Published var signedMessageHashString:String = ""
-    @Published var sentTransactionID:String = ""
-    @Published var publicAddress: String = ""
+    @Published public var balance: Double = -1
+    @Published public var signedMessageHashString = ""
+    @Published public var sentTransactionID = ""
+    @Published public var publicAddress = ""
     
     init?(user: Web3AuthState){
         self.user = user
@@ -31,7 +30,7 @@ class Web3RPC : ObservableObject {
         }
     }
     
-    func getAccounts() {
+    public func getAccounts() {
         self.publicAddress = address.asString()
         print(address.asString())
     }
@@ -56,7 +55,7 @@ class Web3RPC : ObservableObject {
     }
 
     // IMP START - Blockchain Calls
-    func getBalance() {
+    public func getBalance() {
         Task {
             let blockChanged = await checkLatestBlockChanged()
             guard blockChanged == true else {
@@ -77,7 +76,7 @@ class Web3RPC : ObservableObject {
     }
 
     
-    func signMessage() {
+    public func signMessage() {
         do {
             let val = try account.sign(message: "Hello World")
             self.signedMessageHashString = val.web3.hexString
@@ -87,7 +86,7 @@ class Web3RPC : ObservableObject {
         }
     }
     
-    func sendTransaction()  {
+    public func sendTransaction()  {
         Task{
             do {
                 let val = try await transferAsset(sendTo: "0x24BfD1c2D000EC276bb2b6af38C47390Ae6B5FF0", amount: 0.0001, maxTip: 0.0001)

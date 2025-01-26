@@ -1,6 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const { Octokit } = require('octokit');
+const OpenAI = require('openai');
+const { ethers } = require('ethers');
+const axios = require('axios');
+const NodeCache = require('node-cache');
 require('dotenv').config();
 
 const app = express();
@@ -11,9 +15,24 @@ const octokit = new Octokit({
   auth: process.env.GITHUB_TOKEN
 });
 
+// Initialize OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+// Initialize cache with 5 minute TTL
+const cache = new NodeCache({ stdTTL: 300 });
+
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Standard ERC721 ABI for balanceOf and tokenOfOwnerByIndex
+const ERC721_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
+  "function tokenURI(uint256 tokenId) view returns (string)"
+];
 
 // Basic health check endpoint
 app.get('/health', (req, res) => {
@@ -47,7 +66,8 @@ app.get('/notion-data', async (req, res) => {
       status: item.properties.Status.status?.name || '',
       deadline: item.properties.Deadline.date?.start || null,
       hoursEstimate: item.properties['Hours estimate'].number || 0,
-      category: item.properties.Category.select?.name || ''
+      category: item.properties.Category.select?.name || '',
+      completion: item.properties.Completion.number || 0
     }));
 
     res.json(cleanedData);
@@ -175,6 +195,155 @@ app.get('/github-commits', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching from GitHub:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Productivity assistant endpoint
+app.get('/recommend-session', async (req, res) => {
+  try {
+    // Check cache first
+    const cachedResponse = cache.get('recommendations');
+    if (cachedResponse) {
+      return res.json(cachedResponse);
+    }
+
+    // First get all tasks from Notion
+    const notionResponse = await fetch(`https://api.notion.com/v1/databases/${process.env.NOTION_DATABASE_ID}/query`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.NOTION_KEY}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        page_size: 100
+      })
+    });
+
+    if (!notionResponse.ok) {
+      throw new Error(`Notion API responded with status: ${notionResponse.status}`);
+    }
+
+    const data = await notionResponse.json();
+    
+    // Clean and transform the data
+    const tasks = data.results.map(item => ({
+      task: item.properties.Task.title[0]?.plain_text || '',
+      status: item.properties.Status.status?.name || '',
+      deadline: item.properties.Deadline.date?.start || null,
+      hoursEstimate: item.properties['Hours estimate'].number || 0,
+      category: item.properties.Category.select?.name || '',
+      completion: item.properties.Completion.number || 0
+    }));
+
+    // Calculate overall completion
+    const totalTasks = tasks.length;
+    const completionSum = tasks.reduce((sum, task) => sum + (task.completion || 0), 0);
+    const overallCompletion = totalTasks > 0 ? completionSum / totalTasks : 0;
+
+    // Get AI recommendations with simplified prompt
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo-1106",
+      messages: [
+        {
+          role: "system",
+          content: `Prioritize tasks based on deadlines (7 days=high, 30 days=medium), completion status, and work sessions between 30 and 180 minutes. Session duration and priority must be integers.`
+        },
+        {
+          role: "user",
+          content: `Tasks: ${JSON.stringify(tasks)}. Return top 5 priority tasks as JSON with fields: recommendations (array with taskName, sessionDuration (integer minutes), priority (integer 1-5), reason, currentCompletion (decimal), targetCompletion (decimal), deadline)`
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3
+    });
+
+    const recommendations = JSON.parse(completion.choices[0].message.content);
+    
+    // Validate and fix session durations and priorities
+    if (recommendations.recommendations) {
+      recommendations.recommendations = recommendations.recommendations.map(rec => ({
+        ...rec,
+        sessionDuration: Math.round(Number(rec.sessionDuration)),  // Ensure integer
+        priority: Math.round(Number(rec.priority))  // Ensure integer
+      }));
+    }
+
+    // Create final response
+    const finalResponse = {
+      overallProgress: {
+        completion: overallCompletion,
+        totalTasks,
+        completedTasks: tasks.filter(task => task.completion === 1).length,
+        inProgressTasks: tasks.filter(task => task.completion > 0 && task.completion < 1).length,
+        notStartedTasks: tasks.filter(task => task.completion === 0).length,
+        tasksWithDeadlines: tasks.filter(task => task.deadline !== null).length
+      },
+      ...recommendations
+    };
+
+    // Cache the response
+    cache.set('recommendations', finalResponse);
+
+    res.json(finalResponse);
+
+  } catch (error) {
+    console.error('Error getting task recommendations:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// NFT holdings endpoint
+app.get('/nft-holdings', async (req, res) => {
+  try {
+    const { walletAddress } = req.query;
+    const contractAddress = '0x6847f4ef767fc976f9158a1d0de7cb60e1af4ebf';
+    
+    if (!walletAddress) {
+      throw new Error('Wallet address is required');
+    }
+
+    // Connect to Mantle Sepolia
+    const provider = new ethers.JsonRpcProvider('https://rpc.sepolia.mantle.xyz');
+    const nftContract = new ethers.Contract(contractAddress, ERC721_ABI, provider);
+
+    // Get number of NFTs owned by the wallet
+    const balance = await nftContract.balanceOf(walletAddress);
+    
+    // Get all token IDs owned by the wallet and their metadata
+    const tokens = [];
+    for (let i = 0; i < Number(balance); i++) {
+      const tokenId = await nftContract.tokenOfOwnerByIndex(walletAddress, i);
+      const tokenURI = await nftContract.tokenURI(tokenId);
+      
+      // Fetch metadata from IPFS or HTTP
+      let metadata = null;
+      try {
+        const ipfsUrl = tokenURI.replace('ipfs://', 'https://ipfs.io/ipfs/');
+        const metadataResponse = await axios.get(ipfsUrl);
+        metadata = metadataResponse.data;
+      } catch (metadataError) {
+        console.error(`Error fetching metadata for token ${tokenId}:`, metadataError);
+      }
+
+      tokens.push({
+        tokenId: tokenId.toString(),
+        tokenURI,
+        metadata
+      });
+    }
+
+    res.json({
+      walletAddress,
+      contractAddress,
+      balance: balance.toString(),
+      tokens,
+      explorerUrl: `https://sepolia.mantlescan.xyz/address/${contractAddress}`
+    });
+
+  } catch (error) {
+    console.error('Error fetching NFT holdings:', error);
     res.status(500).json({ error: error.message });
   }
 });
