@@ -1,11 +1,11 @@
-const express = require('express');
-const cors = require('cors');
-const { Octokit } = require('octokit');
-const OpenAI = require('openai');
-const { ethers } = require('ethers');
-const axios = require('axios');
-const NodeCache = require('node-cache');
-require('dotenv').config();
+import express from 'express';
+import cors from 'cors';
+import { Octokit } from '@octokit/rest';
+import OpenAI from 'openai';
+import { ethers } from 'ethers';
+import axios from 'axios';
+import NodeCache from 'node-cache';
+import 'dotenv/config';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -248,11 +248,18 @@ app.get('/recommend-session', async (req, res) => {
       messages: [
         {
           role: "system",
-          content: `Prioritize tasks based on deadlines (7 days=high, 30 days=medium), completion status, and work sessions between 30 and 180 minutes. Session duration and priority must be integers.`
+          content: `Prioritize tasks based on deadlines (7 days=high, 30 days=medium), completion status, and work sessions between 30 and 180 minutes.
+          Rules for session duration:
+          1. Never exceed the total hours estimate for a task
+          2. For tasks under 1 hour, session should match the task duration
+          3. For longer tasks, break into sessions of 30-180 minutes based on complexity
+          4. Consider completion % when suggesting duration (nearly complete tasks need less time)
+          
+          Session duration and priority must be integers.`
         },
         {
           role: "user",
-          content: `Tasks: ${JSON.stringify(tasks)}. Return top 5 priority tasks as JSON with fields: recommendations (array with taskName, sessionDuration (integer minutes), priority (integer 1-5), reason, currentCompletion (decimal), targetCompletion (decimal), deadline)`
+          content: `Tasks: ${JSON.stringify(tasks)}. Return top 5 priority tasks as JSON with fields: recommendations (array with taskName, sessionDuration (integer minutes, calculated from hoursEstimate), priority (integer 1-5), reason, currentCompletion (decimal), targetCompletion (decimal), deadline)`
         }
       ],
       response_format: { type: "json_object" },

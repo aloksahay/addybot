@@ -223,7 +223,7 @@ public struct FocusModeView: View {
     }
     
     private func fetchGitHubCommits() {
-        guard let url = URL(string: "http://192.168.1.112:3000/github-commits") else {
+        guard let url = URL(string: "http://localhost:3000/github-commits") else {
             print("⚠️ Invalid GitHub URL")
             return
         }

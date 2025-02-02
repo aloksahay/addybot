@@ -68,6 +68,7 @@ public struct DashboardView: View {
     @State private var purchasedImages: Set<Int> = [1] // Image 1 is free by default
     @State private var balanceTimer: Timer?
     @State private var showLogoutAlert = false
+    @State private var selectedTaskIndex: Int?
     
     public init(web3RPC: Web3RPC, viewModel: ViewModel) {
         _web3RPC = StateObject(wrappedValue: web3RPC)
@@ -82,7 +83,10 @@ public struct DashboardView: View {
     }
     
     private var sessionDuration: Int {
-        selectedTaskDuration ?? recommendations.first?.sessionDuration ?? 0
+        if let index = selectedTaskIndex, recommendations.indices.contains(index) {
+            return recommendations[index].sessionDuration
+        }
+        return recommendations.first?.sessionDuration ?? 0
     }
     
     public var body: some View {
@@ -189,7 +193,10 @@ public struct DashboardView: View {
                         HStack(spacing: 15) {
                             ForEach(Array(recommendations.enumerated()), id: \.element.taskName) { index, task in
                                 Button(action: {
-                                    selectedTaskDuration = task.sessionDuration
+                                    print("Task tapped: \(task.taskName)")
+                                    print("Current duration: \(sessionDuration)")
+                                    selectedTaskIndex = index
+                                    print("New duration should be: \(task.sessionDuration)")
                                 }) {
                                     VStack(alignment: .leading, spacing: 8) {
                                         Text(task.taskName)
@@ -297,8 +304,7 @@ public struct DashboardView: View {
     }
     
     private func fetchRecommendations() {
-        // Replace localhost with your machine's IP address
-        guard let url = URL(string: "http://192.168.1.112:3000/recommend-session") else {
+        guard let url = URL(string: "http://localhost:3000/recommend-session") else {
             print("⚠️ Invalid URL")
             return
         }
@@ -306,9 +312,7 @@ public struct DashboardView: View {
         print("📡 Fetching recommendations from: \(url)")
         
         var request = URLRequest(url: url)
-        request.timeoutInterval = 30 // Increased timeout for development
-        
-        // Add headers if needed
+        request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         URLSession.shared.dataTask(with: request) { data, response, error in
