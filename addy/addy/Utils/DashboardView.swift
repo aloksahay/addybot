@@ -15,7 +15,7 @@ private struct PurchaseOverlay: View {
                     .font(.system(size: 18))
                     .foregroundColor(.white)
                 
-                Text("1 MNT")
+                Text("$5.4")
                     .font(.system(size: 48, weight: .bold))
                     .foregroundColor(.white)
                 
@@ -32,7 +32,7 @@ private struct PurchaseOverlay: View {
                                 onBuy()
                             }
                         }) {
-                            Text("Buy for 1 MNT")
+                            Text("Buy for $5.4")
                                 .font(.system(size: 18, weight: .medium))
                                 .foregroundColor(.black)
                                 .frame(width: 200, height: 50)
@@ -65,10 +65,11 @@ public struct DashboardView: View {
     @State private var showFocusMode = false
     @State private var showPurchaseOverlay = false
     @State private var selectedImageForPurchase: Int?
-    @State private var purchasedImages: Set<Int> = [1] // Image 1 is free by default
+    @State private var purchasedImages: Set<Int> = [1, 2] // Images 1 and 2 are owned by default
     @State private var balanceTimer: Timer?
     @State private var showLogoutAlert = false
     @State private var selectedTaskIndex: Int?
+    @State private var isRefreshing = false
     
     public init(web3RPC: Web3RPC, viewModel: ViewModel) {
         _web3RPC = StateObject(wrappedValue: web3RPC)
@@ -95,159 +96,174 @@ public struct DashboardView: View {
             Color(red: 30/255, green: 31/255, blue: 34/255)
                 .ignoresSafeArea()
             
-            VStack(spacing: 20) {
-                // Top Bar with aligned buttons
-                HStack(alignment: .top) {
-                    // History Button
-                    ZStack {
-                        Circle()
-                            .fill(Color.black)
-                            .frame(width: 40, height: 40)
-                        Image(systemName: "clock.fill")
-                            .foregroundColor(.white)
-                            .font(.system(size: 18))
-                    }
-                    .onTapGesture {
-                        showHistory = true
-                    }
-                    
-                    Spacer()
-                    
-                    // Profile and Balance with Logout
-                    VStack(alignment: .trailing, spacing: 8) {
+            ScrollView {
+                RefreshControl(isRefreshing: $isRefreshing) {
+                    // Trigger refresh
+                    fetchRecommendations()
+                }
+                
+                VStack(spacing: 20) {
+                    // Top Bar with aligned buttons
+                    HStack(alignment: .top) {
+                        // History Button
                         ZStack {
                             Circle()
                                 .fill(Color.black)
                                 .frame(width: 40, height: 40)
-                            Text(userInitial)
+                            Image(systemName: "clock.fill")
                                 .foregroundColor(.white)
-                                .font(.system(size: 18, weight: .medium))
+                                .font(.system(size: 18))
+                        }
+                        .onTapGesture {
+                            showHistory = true
                         }
                         
-                        if web3RPC.balance >= 0 {
-                            Button(action: {
-                                showLogoutAlert = true
-                            }) {
-                                Text("\(String(format: "%.1f", web3RPC.balance)) MNT")
+                        Spacer()
+                        
+                        // Profile and Balance with Logout
+                        VStack(alignment: .trailing, spacing: 8) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.black)
+                                    .frame(width: 40, height: 40)
+                                Text(userInitial)
                                     .foregroundColor(.white)
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(.system(size: 18, weight: .medium))
+                            }
+                            
+                            if web3RPC.balance >= 0 {
+                                Button(action: {
+                                    showLogoutAlert = true
+                                }) {
+                                    Text("\(String(format: "%.1f", web3RPC.balance)) $")
+                                        .foregroundColor(.white)
+                                        .font(.system(size: 16, weight: .semibold))
+                                }
                             }
                         }
                     }
-                }
-                .padding(.horizontal)
-                .padding(.top, 20)
-                
-                // Updated TabView with purchase/owned indicators
-                TabView(selection: $currentPage) {
-                    ForEach(1...4, id: \.self) { index in
-                        ZStack(alignment: .bottomTrailing) {
-                            Image("\(index)")
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: UIScreen.main.bounds.width - 40, height: 300)
-                                .cornerRadius(20)
-                            
-                            if purchasedImages.contains(index) {
-                                // Owned image indicator
-                                ZStack {
-                                    Circle()
-                                        .fill(Color.green.opacity(0.6))
-                                        .frame(width: 40, height: 40)
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(.white)
-                                }
-                                .padding(12)
-                            } else {
-                                // Purchase button
-                                Button(action: {
-                                    selectedImageForPurchase = index
-                                    showPurchaseOverlay = true
-                                }) {
-                                    VStack(spacing: 4) {
-                                        ZStack {
-                                            Circle()
-                                                .stroke(Color.yellow, lineWidth: 2)
-                                                .background(Circle().fill(Color.black.opacity(0.7)))
-                                                .frame(width: 40, height: 40)
-                                            Image(systemName: "cart.fill")
+                    .padding(.horizontal)
+                    .padding(.top, 20)
+                    
+                    // Updated TabView with purchase/owned indicators
+                    TabView(selection: $currentPage) {
+                        ForEach(1...4, id: \.self) { index in
+                            ZStack(alignment: .bottomTrailing) {
+                                Image("\(index)")
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: UIScreen.main.bounds.width - 40, height: 300)
+                                    .cornerRadius(20)
+                                
+                                if purchasedImages.contains(index) {
+                                    // Owned image indicator
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.green.opacity(0.6))
+                                            .frame(width: 40, height: 40)
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(.white)
+                                    }
+                                    .padding(12)
+                                } else {
+                                    // Purchase button
+                                    Button(action: {
+                                        selectedImageForPurchase = index
+                                        showPurchaseOverlay = true
+                                    }) {
+                                        VStack(spacing: 4) {
+                                            ZStack {
+                                                Circle()
+                                                    .stroke(Color.yellow, lineWidth: 2)
+                                                    .background(Circle().fill(Color.black.opacity(0.7)))
+                                                    .frame(width: 40, height: 40)
+                                                Image(systemName: "cart.fill")
+                                                    .foregroundColor(.white)
+                                            }
+                                            Text("$4.5")
+                                                .font(.system(size: 12, weight: .medium))
                                                 .foregroundColor(.white)
                                         }
-                                        Text("1 MNT")
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundColor(.white)
                                     }
-                                }
-                                .padding(12)
-                            }
-                        }
-                        .tag(index - 1)
-                    }
-                }
-                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .automatic))
-                .frame(height: 300)
-                
-                // Tasks ScrollView
-                if !recommendations.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 15) {
-                            ForEach(Array(recommendations.enumerated()), id: \.element.taskName) { index, task in
-                                Button(action: {
-                                    print("Task tapped: \(task.taskName)")
-                                    print("Current duration: \(sessionDuration)")
-                                    selectedTaskIndex = index
-                                    print("New duration should be: \(task.sessionDuration)")
-                                }) {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        Text(task.taskName)
-                                            .foregroundColor(.white)
-                                            .font(.system(size: 16, weight: .medium))
-                                            .multilineTextAlignment(.leading)
-                                            .lineLimit(2)
-                                        
-                                        ProgressView(value: task.currentCompletion)
-                                            .progressViewStyle(LinearProgressViewStyle(tint: .green))
-                                            .frame(width: 120)
-                                    }
-                                    .frame(width: 160, height: 100)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
-                                    .background(Color.black)
-                                    .cornerRadius(10)
+                                    .padding(12)
                                 }
                             }
+                            .tag(index - 1)
                         }
-                        .padding(.horizontal)
                     }
-                } else {
-                    Text("Loading tasks...")
-                        .foregroundColor(.gray)
+                    .tabViewStyle(PageTabViewStyle(indexDisplayMode: .automatic))
+                    .frame(height: 300)
+                    
+                    // Tasks ScrollView
+                    if !recommendations.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 15) {
+                                ForEach(Array(recommendations.enumerated()), id: \.element.taskName) { index, task in
+                                    Button(action: {
+                                        print("Task tapped: \(task.taskName)")
+                                        print("Current duration: \(sessionDuration)")
+                                        selectedTaskIndex = index
+                                        print("New duration should be: \(task.sessionDuration)")
+                                    }) {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text(task.taskName)
+                                                .foregroundColor(.white)
+                                                .font(.system(size: 16, weight: .medium))
+                                                .multilineTextAlignment(.leading)
+                                                .lineLimit(2)
+                                            
+                                            HStack {
+                                                Text("\(task.sessionDuration) min")
+                                                    .foregroundColor(.gray)
+                                                    .font(.system(size: 14))
+                                                Spacer()
+                                            }
+                                            
+                                            ProgressView(value: task.currentCompletion)
+                                                .progressViewStyle(LinearProgressViewStyle(tint: .green))
+                                                .frame(width: 120)
+                                        }
+                                        .frame(width: 160, height: 100)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 12)
+                                        .background(Color.black)
+                                        .cornerRadius(10)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                    } else {
+                        Text("Loading tasks...")
+                            .foregroundColor(.gray)
+                    }
+                    
+                    // Session Duration Display - only show when tasks are loaded
+                    if !recommendations.isEmpty {
+                        Text("\(sessionDuration) min")
+                            .font(.system(size: 48, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.vertical, 20)
+                    }
+                    
+                    // Start Focus Session Button
+                    Button(action: {
+                        showFocusMode = true
+                    }) {
+                        Text("Start Session")
+                            .foregroundColor(.white)
+                            .font(.system(size: 18, weight: .bold))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .background(Color.black)
+                            .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 20)
                 }
-                
-                // Session Duration Display - only show when tasks are loaded
-                if !recommendations.isEmpty {
-                    Text("\(sessionDuration) min")
-                        .font(.system(size: 48, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.vertical, 30)
-                }
-                
-                Spacer()
-                
-                // Start Focus Session Button
-                Button(action: {
-                    showFocusMode = true
-                }) {
-                    Text("Start Focus Session")
-                        .foregroundColor(.white)
-                        .font(.system(size: 18, weight: .bold))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(Color.black)
-                        .cornerRadius(12)
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 30)
+            }
+            .refreshable {
+                await fetchRecommendationsAsync()
             }
             
             // Updated Purchase Overlay
@@ -352,5 +368,67 @@ public struct DashboardView: View {
         balanceTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
             web3RPC.getBalance()
         }
+    }
+    
+    // Add async version of fetchRecommendations
+    private func fetchRecommendationsAsync() async {
+        guard let url = URL(string: "http://localhost:3000/recommend-session") else {
+            print("⚠️ Invalid URL")
+            return
+        }
+        
+        print("📡 Fetching recommendations from: \(url)")
+        
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📥 Response status code: \(httpResponse.statusCode)")
+            }
+            
+            let decodedResponse = try JSONDecoder().decode(RecommendationResponse.self, from: data)
+            print("✅ Successfully decoded \(decodedResponse.recommendations.count) recommendations")
+            
+            await MainActor.run {
+                self.recommendations = decodedResponse.recommendations
+            }
+        } catch {
+            print("❌ Error: \(error)")
+        }
+    }
+}
+
+// Add RefreshControl view if needed by your SwiftUI version
+struct RefreshControl: View {
+    @Binding var isRefreshing: Bool
+    let onRefresh: () -> Void
+    
+    var body: some View {
+        GeometryReader { geometry in
+            if geometry.frame(in: .global).minY > 50 {
+                Color.clear
+                    .preference(key: RefreshKey.self, value: true)
+                    .onAppear {
+                        isRefreshing = true
+                        onRefresh()
+                    }
+            } else {
+                Color.clear
+                    .preference(key: RefreshKey.self, value: false)
+            }
+        }
+        .frame(height: 0)
+    }
+}
+
+struct RefreshKey: PreferenceKey {
+    static var defaultValue: Bool = false
+    
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = nextValue()
     }
 }
