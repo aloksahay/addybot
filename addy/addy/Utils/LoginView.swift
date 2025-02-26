@@ -25,7 +25,7 @@ struct LoginView: View {
                 VStack(spacing: 20) {
                     // Title and description
                     VStack(spacing: 12) {
-                        Text("Addy for your ADD")
+                        Text("ADDY for your ADHD")
                             .font(.system(size: 24, weight: .bold))
                             .foregroundColor(.white)
                         
@@ -34,7 +34,7 @@ struct LoginView: View {
                             .foregroundColor(.white.opacity(0.3))
                             .padding(.horizontal, 40)
                         
-                        Text("Let Addy manage your tasks for you and block out the distractions to help you achieve your daily goals.")
+                        Text("Let ADDY manage your deliverables. Block out the distractions and just focus on your daily shipments.")
                             .font(.system(size: 16))
                             .foregroundColor(.white)
                             .multilineTextAlignment(.center)
