@@ -35,7 +35,7 @@ struct UserDetailView: View {
                         Label("Get Balance", systemImage: "dollarsign.circle")
                     }
                     if web3RPC.balance >= 0 {
-                        Text("\(web3RPC.balance) MNT")
+                        Text("\(String(format: "%.1f", web3RPC.balance)) MNT") // Format balance to 1 decimal place
                     }
 
                     Button {
